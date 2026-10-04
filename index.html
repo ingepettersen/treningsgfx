@@ -518,6 +518,54 @@
       background: var(--bg-elevated);
     }
 
+    .media-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .media-toggle {
+      display: inline-flex;
+      padding: 2px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+
+    .media-toggle-btn {
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .media-toggle-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+
+    .save-image-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+
+    .save-image-btn:hover { opacity: 0.88; }
+    .save-image-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
     .modal-meta {
       display: flex;
       flex-wrap: wrap;
@@ -1161,6 +1209,18 @@
     </div>
     <div class="modal-media">
       <img class="modal-gif" id="modal-gif" alt="" />
+      <div class="media-toolbar">
+        <div class="media-toggle" role="group" aria-label="Media type">
+          <button class="media-toggle-btn" data-media="gif" type="button">GIF</button>
+          <button class="media-toggle-btn" data-media="image" type="button">Image</button>
+        </div>
+        <a class="save-image-btn" id="save-image-btn" href="#" download>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
+          </svg>
+          Save image
+        </a>
+      </div>
     </div>
     <div class="modal-meta" id="modal-meta"></div>
     <div class="modal-muscles" id="modal-muscles"></div>
@@ -1203,6 +1263,8 @@
   const modalMuscles  = document.getElementById('modal-muscles');
   const modalInstr    = document.getElementById('modal-instructions');
   const modalClose    = document.getElementById('modal-close');
+  const saveImageBtn  = document.getElementById('save-image-btn');
+  const mediaToggleBtns = document.querySelectorAll('.media-toggle-btn');
 
   // ── Utility ────────────────────────────────────────
   function debounce(fn, ms) {
@@ -1469,8 +1531,11 @@
     if (!ex) return;
 
     modalTitle.textContent = ex.name;
-    modalGif.src = ex.gif_url;
+    state.modalExercise = ex;
     modalGif.alt = ex.name;
+    showModalMedia();
+    saveImageBtn.href = ex.image;
+    saveImageBtn.download = imageFileName(ex);
 
     // Meta chips
     modalMeta.innerHTML = '';
@@ -1579,6 +1644,55 @@
     modalClose.focus();
   }
 
+  // ── Modal media (GIF / still image) ───────────────
+  function getMediaPref() {
+    try { return localStorage.getItem('modalMedia') === 'image' ? 'image' : 'gif'; }
+    catch { return 'gif'; }
+  }
+
+  function setMediaPref(value) {
+    try { localStorage.setItem('modalMedia', value); } catch {}
+  }
+
+  function showModalMedia() {
+    const ex = state.modalExercise;
+    if (!ex) return;
+    const pref = getMediaPref();
+    modalGif.src = pref === 'image' ? ex.image : ex.gif_url;
+    mediaToggleBtns.forEach(b => b.classList.toggle('active', b.dataset.media === pref));
+  }
+
+  function imageFileName(ex) {
+    const slug = ex.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const ext = (ex.image.match(/\.[a-z0-9]+$/i) || ['.jpg'])[0];
+    return `${ex.id}-${slug}${ext}`;
+  }
+
+  // On phones, the share sheet is the way to get the file into the photo
+  // library ("Save Image" on iOS). Fall back to a plain download otherwise.
+  async function saveModalImage(e) {
+    const ex = state.modalExercise;
+    if (!ex || !navigator.canShare) return;
+    e.preventDefault();
+    try {
+      const res = await fetch(ex.image);
+      const blob = await res.blob();
+      const file = new File([blob], imageFileName(ex), { type: blob.type || 'image/jpeg' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: ex.name });
+        return;
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+    const a = document.createElement('a');
+    a.href = ex.image;
+    a.download = imageFileName(ex);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   function closeModal() {
     modalOverlay.classList.remove('open');
     document.body.style.overflow = '';
@@ -1641,6 +1755,11 @@
 
     // Modal close
     modalClose.addEventListener('click', closeModal);
+    saveImageBtn.addEventListener('click', saveModalImage);
+    mediaToggleBtns.forEach(btn => btn.addEventListener('click', () => {
+      setMediaPref(btn.dataset.media);
+      showModalMedia();
+    }));
     modalOverlay.addEventListener('click', e => {
       if (e.target === modalOverlay) closeModal();
     });
